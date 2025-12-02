@@ -129,7 +129,7 @@ def get_global_timeline_by_location():
 
 # --- User Interface ---
 
-st.title("📊 Data Consumption Dashboard - bsp.exe")
+st.title("📊 Data Consumption Dashboard - Broadsign")
 
 # --- Section 1: Search ---
 st.subheader("🔎 Search by Player ID")
