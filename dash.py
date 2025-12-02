@@ -25,44 +25,7 @@ def init_connection():
         st.error(f"Database connection error: {e}")
         return None
 
-# 1. Function: Detailed data per Player ID (Search)
-def get_player_data(player_id):
-    conn = init_connection()
-    if conn is None:
-        return pd.DataFrame()
-    
-    query = """
-    SELECT 
-        ns.date_log,
-        l.name as location_name,
-        a.tag as player_id,
-        SUM(ns.total_sent + ns.total_received) as total_bytes
-    FROM 
-        glpi_network_stats ns
-    JOIN 
-        glpi_computers c ON ns.computers_id = c.id
-    JOIN 
-        glpi_locations l ON c.locations_id = l.id
-    JOIN 
-        glpi_agents a ON a.items_id = c.id AND a.itemtype = 'Computer'
-    WHERE 
-        ns.app_name LIKE '%bsp.exe%'
-        AND a.tag LIKE %s
-    GROUP BY 
-        ns.date_log, l.name, a.tag
-    ORDER BY 
-        ns.date_log ASC;
-    """
-    try:
-        df = pd.read_sql(query, conn, params=(f"%{player_id}%",))
-        conn.close()
-        return df
-    except Exception as e:
-        st.error(f"Player query error: {e}")
-        conn.close()
-        return pd.DataFrame()
-
-# 2. Function: Global Stats by Location (Bar Chart)
+# 1. Function: Global Stats by Location (Bar Chart)
 def get_global_stats_by_location():
     conn = init_connection()
     if conn is None:
@@ -94,7 +57,7 @@ def get_global_stats_by_location():
         conn.close()
         return pd.DataFrame()
 
-# 3. NEW Function: Global Timeline (Total consumption per day)
+# 2. Function: Global Timeline (Total consumption per day)
 def get_global_timeline():
     conn = init_connection()
     if conn is None:
@@ -126,41 +89,8 @@ def get_global_timeline():
 
 st.title("📊 Data Consumption Dashboard - bsp.exe")
 
-# --- Section 1: Search ---
-st.subheader("🔎 Search by Player ID")
-col1, col2 = st.columns([1, 3])
-with col1:
-    player_id_input = st.text_input("Enter a Tag (e.g., DAL-DDP...)", "")
-
-if player_id_input:
-    with st.spinner(f'Loading data for {player_id_input}...'):
-        df_player = get_player_data(player_id_input)
-
-    if not df_player.empty:
-        df_player['total_mb'] = (df_player['total_bytes'] / (1024 * 1024)).round(2)
-        st.success(f"Data found for: {player_id_input}")
-        st.metric("Total Consumed (This tag)", f"{df_player['total_mb'].sum():.2f} MB")
-        
-        fig_player = px.line(
-            df_player, 
-            x='date_log', 
-            y='total_mb', 
-            color='location_name',
-            markers=True,
-            title=f"Daily consumption for: {player_id_input}",
-            labels={'total_mb': 'Consumption (MB)', 'date_log': 'Date'}
-        )
-        st.plotly_chart(fig_player, use_container_width=True)
-    else:
-        st.warning("No data found for this Player ID.")
-
-st.divider() 
-
-# --- Section 2: Global Overview ---
-st.subheader("🌍 Global Network Overview")
-
-# Load global data
-with st.spinner('Loading global statistics...'):
+# Load data
+with st.spinner('Loading statistics...'):
     df_timeline = get_global_timeline()
     df_location = get_global_stats_by_location()
 
@@ -170,41 +100,49 @@ if not df_timeline.empty:
 if not df_location.empty:
     df_location['total_mb'] = (df_location['total_bytes'] / (1024 * 1024)).round(2)
 
-# Display Global Metrics
+# Display Global Metrics at the top
 if not df_timeline.empty:
     col_metric1, col_metric2 = st.columns(2)
     col_metric1.metric("Total Consumption (All time)", f"{df_timeline['total_mb'].sum():.2f} MB")
     col_metric2.metric("Peak Daily Consumption", f"{df_timeline['total_mb'].max():.2f} MB")
 
-# Graph 1: Global Timeline
-if not df_timeline.empty:
-    st.markdown("### 📈 Total Daily Consumption (All Locations)")
-    fig_timeline = px.area(
-        df_timeline,
-        x='date_log',
-        y='total_mb',
-        title="Evolution of Global Data Usage (bsp.exe)",
-        labels={'total_mb': 'Total Consumption (MB)', 'date_log': 'Date'},
-        markers=True
-    )
-    st.plotly_chart(fig_timeline, use_container_width=True)
+st.markdown("---")
 
-# Graph 2: Location Ranking
-if not df_location.empty:
-    st.markdown("### 🏢 Consumption Ranking by Location")
-    fig_global = px.bar(
-        df_location, 
-        x='location_name', 
-        y='total_mb',
-        color='total_mb',
-        title="Total Data Consumption per Location",
-        labels={'total_mb': 'Total Consumed (MB)', 'location_name': 'Location'},
-        color_continuous_scale='Viridis'
-    )
-    fig_global.update_layout(xaxis_tickangle=-45) 
-    st.plotly_chart(fig_global, use_container_width=True)
-    
+# Main Graphs Layout (Side by Side)
+if not df_timeline.empty and not df_location.empty:
+    col1, col2 = st.columns(2) # Creates 2 equal columns
+
+    # Left Column: Timeline
+    with col1:
+        st.subheader("📈 Global Timeline")
+        fig_timeline = px.area(
+            df_timeline,
+            x='date_log',
+            y='total_mb',
+            title="Evolution of Data Usage",
+            labels={'total_mb': 'Consumption (MB)', 'date_log': 'Date'},
+            markers=True
+        )
+        st.plotly_chart(fig_timeline, use_container_width=True)
+
+    # Right Column: Location Ranking
+    with col2:
+        st.subheader("🏢 Ranking by Location")
+        fig_global = px.bar(
+            df_location, 
+            x='location_name', 
+            y='total_mb',
+            color='total_mb',
+            title="Consumption per Location",
+            labels={'total_mb': 'Total (MB)', 'location_name': 'Location'},
+            color_continuous_scale='Viridis'
+        )
+        fig_global.update_layout(xaxis_tickangle=-45) 
+        st.plotly_chart(fig_global, use_container_width=True)
+
+    # Raw data expander at the bottom
     with st.expander("View raw data by location"):
         st.dataframe(df_location[['location_name', 'total_mb']])
-else:
-    st.info("No global data available.")
+
+elif df_timeline.empty and df_location.empty:
+    st.info("No data available.")
