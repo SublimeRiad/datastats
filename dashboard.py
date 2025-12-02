@@ -5,13 +5,13 @@ import plotly.express as px
 import os
 from dotenv import load_dotenv
 
-# Chargement des variables de sécurité depuis le fichier .env
+# Load security variables from .env file (or Secrets on Streamlit Cloud)
 load_dotenv()
 
-# Configuration de la page
-st.set_page_config(page_title="Consommation BSP.exe", layout="wide")
+# Page Configuration
+st.set_page_config(page_title="BSP.exe Consumption", layout="wide")
 
-# Fonction de connexion à la base de données
+# Function to connect to the database
 def init_connection():
     try:
         return mysql.connector.connect(
@@ -22,17 +22,17 @@ def init_connection():
             database=os.getenv("DB_NAME")
         )
     except Exception as e:
-        st.error(f"Erreur de connexion à la base de données : {e}")
+        st.error(f"Database connection error: {e}")
         return None
 
-# Fonction pour récupérer les données
+# Function to retrieve data
 def get_data(player_id):
     conn = init_connection()
     if conn is None:
         return pd.DataFrame()
 
-    # La requête SQL joint les 4 tables nécessaires
-    # On filtre sur bsp.exe et sur le TAG (Player ID)
+    # The SQL query joins the 4 necessary tables
+    # Filters by 'bsp.exe' and the TAG (Player ID)
     query = """
     SELECT 
         ns.date_log,
@@ -57,58 +57,58 @@ def get_data(player_id):
     """
     
     try:
-        # Utilisation de pandas pour lire directement en DataFrame
-        # Le %s est remplacé par le player_id de manière sécurisée
+        # Using pandas to read directly into a DataFrame
+        # %s is replaced by player_id securely
         df = pd.read_sql(query, conn, params=(f"%{player_id}%",))
         conn.close()
         return df
     except Exception as e:
-        st.error(f"Erreur lors de la requête : {e}")
+        st.error(f"Query error: {e}")
         conn.close()
         return pd.DataFrame()
 
-# --- Interface Utilisateur ---
+# --- User Interface ---
 
-st.title("📊 Analyse Consommation Données - bsp.exe")
-st.markdown("Visualisation de la consommation journalière par Location.")
+st.title("📊 Data Consumption Analysis - bsp.exe")
+st.markdown("Visualization of daily data consumption by Location.")
 
-# Zone de recherche
+# Search Area
 col1, col2 = st.columns([1, 3])
 with col1:
-    player_id_input = st.text_input("Rechercher par Player ID (Tag)", placeholder="Ex: DAL-DDP...")
+    player_id_input = st.text_input("Search by Player ID (Tag)", placeholder="Ex: DAL-DDP...")
 
 if player_id_input:
-    with st.spinner('Chargement des données...'):
+    with st.spinner('Loading data...'):
         df = get_data(player_id_input)
 
     if not df.empty:
-        # Conversion des Octets en Mégaoctets (MB) pour la lisibilité
+        # Convert Bytes to Megabytes (MB) for readability
         df['total_mb'] = df['total_bytes'] / (1024 * 1024)
         df['total_mb'] = df['total_mb'].round(2)
 
-        # Affichage des métriques globales
-        st.metric(label="Total Données Consommées (Période)", value=f"{df['total_mb'].sum():.2f} MB")
+        # Display global metrics
+        st.metric(label="Total Data Consumed (Period)", value=f"{df['total_mb'].sum():.2f} MB")
 
-        # Création du graphique avec Plotly
+        # Create chart with Plotly
         fig = px.line(
             df, 
             x='date_log', 
             y='total_mb', 
             color='location_name',
             markers=True,
-            title=f"Consommation journalière de bsp.exe pour le tag: {player_id_input}",
-            labels={'total_mb': 'Consommation (MB)', 'date_log': 'Date', 'location_name': 'Localisation'}
+            title=f"Daily consumption of bsp.exe for tag: {player_id_input}",
+            labels={'total_mb': 'Consumption (MB)', 'date_log': 'Date', 'location_name': 'Location'}
         )
         
-        # Amélioration du graphique
+        # Improve chart layout
         fig.update_layout(hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Affichage des données brutes
-        with st.expander("Voir les données brutes"):
+        # Display raw data
+        with st.expander("View raw data"):
             st.dataframe(df[['date_log', 'location_name', 'player_id', 'total_mb']])
             
     else:
-        st.warning("Aucune donnée trouvée pour ce Player ID ou application bsp.exe introuvable pour cet agent.")
+        st.warning("No data found for this Player ID, or 'bsp.exe' application usage not found for this agent.")
 else:
-    st.info("Veuillez entrer un Player ID pour commencer la recherche.")
+    st.info("Please enter a Player ID to start the search.")
