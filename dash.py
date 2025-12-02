@@ -87,7 +87,7 @@ def get_global_timeline():
 
 # --- User Interface ---
 
-st.title("📊 DATA CONSUMPTION DASHBOARD - BSP.EXE")
+st.title("📊 DATA CONSUMPTION DASHBOARD - BROADSIGN")
 
 # Load data
 with st.spinner('Loading statistics...'):
