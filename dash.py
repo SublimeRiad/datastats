@@ -87,7 +87,7 @@ def get_global_timeline():
 
 # --- User Interface ---
 
-st.title("📊 Data Consumption Dashboard - bsp.exe")
+st.title("📊 DATA CONSUMPTION DASHBOARD - BSP.EXE")
 
 # Load data
 with st.spinner('Loading statistics...'):
@@ -99,12 +99,14 @@ if not df_timeline.empty:
     df_timeline['total_mb'] = (df_timeline['total_bytes'] / (1024 * 1024)).round(2)
 if not df_location.empty:
     df_location['total_mb'] = (df_location['total_bytes'] / (1024 * 1024)).round(2)
+    # Convertir les noms de lieux en MAJUSCULES pour l'affichage
+    df_location['location_name'] = df_location['location_name'].str.upper()
 
 # Display Global Metrics at the top
 if not df_timeline.empty:
     col_metric1, col_metric2 = st.columns(2)
-    col_metric1.metric("Total Consumption (All time)", f"{df_timeline['total_mb'].sum():.2f} MB")
-    col_metric2.metric("Peak Daily Consumption", f"{df_timeline['total_mb'].max():.2f} MB")
+    col_metric1.metric("TOTAL CONSUMPTION (ALL TIME)", f"{df_timeline['total_mb'].sum():.2f} MB")
+    col_metric2.metric("PEAK DAILY CONSUMPTION", f"{df_timeline['total_mb'].max():.2f} MB")
 
 st.markdown("---")
 
@@ -114,12 +116,12 @@ if not df_timeline.empty and not df_location.empty:
 
     # Left Column: Timeline
     with col1:
-        st.subheader("📈 Global Timeline")
+        st.subheader("📈 GLOBAL TIMELINE")
         fig_timeline = px.area(
             df_timeline,
             x='date_log',
             y='total_mb',
-            title="Evolution of Data Usage",
+            title="EVOLUTION OF DATA USAGE",
             labels={'total_mb': 'Consumption (MB)', 'date_log': 'Date'},
             markers=True
         )
@@ -127,22 +129,34 @@ if not df_timeline.empty and not df_location.empty:
 
     # Right Column: Location Ranking
     with col2:
-        st.subheader("🏢 Ranking by Location")
+        st.subheader("🏢 RANKING BY LOCATION")
         fig_global = px.bar(
             df_location, 
             x='location_name', 
             y='total_mb',
             color='total_mb',
-            title="Consumption per Location",
+            title="CONSUMPTION PER LOCATION",
             labels={'total_mb': 'Total (MB)', 'location_name': 'Location'},
             color_continuous_scale='Viridis'
         )
         fig_global.update_layout(xaxis_tickangle=-45) 
         st.plotly_chart(fig_global, use_container_width=True)
 
-    # Raw data expander at the bottom
-    with st.expander("View raw data by location"):
-        st.dataframe(df_location[['location_name', 'total_mb']])
+    # Raw data expander at the bottom (Expanded & Renamed)
+    # Préparation du DataFrame pour l'affichage (Renommage des colonnes)
+    df_display = df_location[['location_name', 'total_mb']].rename(
+        columns={
+            'location_name': 'LOCATION', 
+            'total_mb': 'TOTAL MB'
+        }
+    )
+    
+    with st.expander("VIEW RAW DATA BY LOCATION", expanded=True):
+        st.dataframe(
+            df_display, 
+            use_container_width=True,
+            hide_index=True # Masque la colonne d'index (0, 1, 2...) pour un look plus propre
+        )
 
 elif df_timeline.empty and df_location.empty:
     st.info("No data available.")
