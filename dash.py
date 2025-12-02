@@ -5,36 +5,13 @@ import plotly.express as px
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
+# Chargement des variables de sécurité
 load_dotenv()
 
-# --- 1. Page Config & CSS for Dense Dark Layout ---
-st.set_page_config(page_title="BSP Monitoring", layout="wide", initial_sidebar_state="collapsed")
+# Configuration de la page
+st.set_page_config(page_title="Dashboard BSP.exe", layout="wide")
 
-# Custom CSS pour forcer le look sombre et dense
-st.markdown("""
-    <style>
-        /* Réduction des marges */
-        .block-container {
-            padding-top: 1rem;
-            padding-bottom: 1rem;
-            padding-left: 1rem;
-            padding-right: 1rem;
-        }
-        /* Style des métriques pour le mode sombre */
-        div[data-testid="metric-container"] {
-            background-color: #262730;
-            border: 1px solid #464b5c;
-            padding: 10px;
-            border-radius: 8px;
-            color: white;
-        }
-        /* Titre plus compact */
-        h1 { font-size: 1.8rem !important; margin-bottom: 0 !important; }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- 2. Database Connection ---
+# Fonction de connexion
 def init_connection():
     try:
         return mysql.connector.connect(
@@ -45,165 +22,143 @@ def init_connection():
             database=os.getenv("DB_NAME")
         )
     except Exception as e:
-        st.error(f"DB Connection Error: {e}")
+        st.error(f"Erreur de connexion à la base de données : {e}")
         return None
 
-# --- 3. Data Functions (Cached) ---
-
-@st.cache_data(ttl=300)
-def get_global_data():
-    conn = init_connection()
-    if conn is None: return pd.DataFrame(), pd.DataFrame()
-    
-    # Query 1: Timeline by Location
-    query_timeline = """
-    SELECT ns.date_log, l.name as location_name, SUM(ns.total_sent + ns.total_received) as total_bytes
-    FROM glpi_network_stats ns
-    JOIN glpi_computers c ON ns.computers_id = c.id
-    JOIN glpi_locations l ON c.locations_id = l.id
-    WHERE ns.app_name LIKE '%bsp.exe%'
-    GROUP BY ns.date_log, l.name
-    ORDER BY ns.date_log ASC;
-    """
-    
-    # Query 2: Ranking by Location
-    query_ranking = """
-    SELECT l.name as location_name, SUM(ns.total_sent + ns.total_received) as total_bytes
-    FROM glpi_network_stats ns
-    JOIN glpi_computers c ON ns.computers_id = c.id
-    JOIN glpi_locations l ON c.locations_id = l.id
-    WHERE ns.app_name LIKE '%bsp.exe%'
-    GROUP BY l.name
-    ORDER BY total_bytes DESC;
-    """
-    
-    try:
-        df_time = pd.read_sql(query_timeline, conn)
-        df_rank = pd.read_sql(query_ranking, conn)
-        conn.close()
-        return df_time, df_rank
-    except Exception:
-        conn.close()
-        return pd.DataFrame(), pd.DataFrame()
-
+# 1. Fonction pour les données détaillées (Par Player ID)
 def get_player_data(player_id):
     conn = init_connection()
-    if conn is None: return pd.DataFrame()
+    if conn is None:
+        return pd.DataFrame()
+    
     query = """
-    SELECT ns.date_log, l.name as location_name, a.tag as player_id,
-    SUM(ns.total_sent + ns.total_received) as total_bytes
-    FROM glpi_network_stats ns
-    JOIN glpi_computers c ON ns.computers_id = c.id
-    JOIN glpi_locations l ON c.locations_id = l.id
-    JOIN glpi_agents a ON a.items_id = c.id AND a.itemtype = 'Computer'
-    WHERE ns.app_name LIKE '%bsp.exe%' AND a.tag LIKE %s
-    GROUP BY ns.date_log, l.name, a.tag ORDER BY ns.date_log ASC;
+    SELECT 
+        ns.date_log,
+        l.name as location_name,
+        a.tag as player_id,
+        SUM(ns.total_sent + ns.total_received) as total_bytes
+    FROM 
+        glpi_network_stats ns
+    JOIN 
+        glpi_computers c ON ns.computers_id = c.id
+    JOIN 
+        glpi_locations l ON c.locations_id = l.id
+    JOIN 
+        glpi_agents a ON a.items_id = c.id AND a.itemtype = 'Computer'
+    WHERE 
+        ns.app_name LIKE '%bsp.exe%'
+        AND a.tag LIKE %s
+    GROUP BY 
+        ns.date_log, l.name, a.tag
+    ORDER BY 
+        ns.date_log ASC;
     """
     try:
         df = pd.read_sql(query, conn, params=(f"%{player_id}%",))
         conn.close()
         return df
-    except Exception:
+    except Exception as e:
+        st.error(f"Erreur requête joueur : {e}")
         conn.close()
         return pd.DataFrame()
 
-# --- 4. Main Execution ---
-
-st.title("📊 BSP.exe Network Monitoring")
-
-df_timeline, df_ranking = get_global_data()
-
-if not df_timeline.empty and not df_ranking.empty:
-    df_timeline['total_mb'] = (df_timeline['total_bytes'] / (1024 * 1024)).round(2)
-    df_ranking['total_mb'] = (df_ranking['total_bytes'] / (1024 * 1024)).round(2)
+# 2. Fonction pour les statistiques globales (Par Location)
+def get_global_stats():
+    conn = init_connection()
+    if conn is None:
+        return pd.DataFrame()
     
-    total_consumed = df_ranking['total_mb'].sum()
-    top_location = df_ranking.iloc[0]['location_name']
-    top_val = df_ranking.iloc[0]['total_mb']
+    query = """
+    SELECT 
+        l.name as location_name,
+        SUM(ns.total_sent + ns.total_received) as total_bytes
+    FROM 
+        glpi_network_stats ns
+    JOIN 
+        glpi_computers c ON ns.computers_id = c.id
+    JOIN 
+        glpi_locations l ON c.locations_id = l.id
+    WHERE 
+        ns.app_name LIKE '%bsp.exe%'
+    GROUP BY 
+        l.name
+    ORDER BY 
+        total_bytes DESC;
+    """
+    try:
+        df = pd.read_sql(query, conn)
+        conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Erreur requête globale : {e}")
+        conn.close()
+        return pd.DataFrame()
 
-    # --- KPI Metrics ---
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Total Data (Period)", f"{total_consumed:,.0f} MB")
-    kpi2.metric("Top Location", f"{top_location}", f"{top_val:.0f} MB")
-    kpi3.metric("Active Locations", f"{df_ranking['location_name'].nunique()}")
-    kpi4.metric("Last Log Date", str(df_timeline['date_log'].max()))
+# --- Interface Utilisateur ---
 
-    st.markdown("---") # Separator line
+st.title("📊 Dashboard Consommation - bsp.exe")
 
-    # --- Main Charts ---
-    col_left, col_right = st.columns([2, 1])
+# Zone de Recherche
+st.subheader("🔎 Recherche par Player ID")
+col1, col2 = st.columns([1, 3])
+with col1:
+    player_id_input = st.text_input("Entrez un Tag (ex: DAL-DDP...)", "")
 
-    # 1. Timeline Chart (Dark Mode optimized)
-    with col_left:
-        st.subheader("📈 Traffic Over Time")
-        fig_time = px.line(
-            df_timeline, 
+# Affichage des résultats de recherche (Si une recherche est faite)
+if player_id_input:
+    with st.spinner(f'Chargement des données pour {player_id_input}...'):
+        df_player = get_player_data(player_id_input)
+
+    if not df_player.empty:
+        df_player['total_mb'] = (df_player['total_bytes'] / (1024 * 1024)).round(2)
+        
+        st.success(f"Données trouvées pour : {player_id_input}")
+        
+        # Métrique pour le joueur
+        st.metric("Total Consommé (Ce tag)", f"{df_player['total_mb'].sum():.2f} MB")
+        
+        # Graphique Ligne (Temporel)
+        fig_player = px.line(
+            df_player, 
             x='date_log', 
             y='total_mb', 
             color='location_name',
-            labels={'total_mb': 'MB', 'date_log': 'Date'},
-            height=350,
-            template="plotly_dark", # Theme sombre Plotly
-            color_discrete_sequence=px.colors.qualitative.Bold # Couleurs vives
+            markers=True,
+            title=f"Évolution journalière pour {player_id_input}",
+            labels={'total_mb': 'Consommation (MB)', 'date_log': 'Date'}
         )
-        # Force transparent background
-        fig_time.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=10, r=10, t=30, b=10),
-            legend=dict(orientation="h", y=1.1, x=0)
-        )
-        st.plotly_chart(fig_time, use_container_width=True)
+        st.plotly_chart(fig_player, use_container_width=True)
+    else:
+        st.warning("Aucune donnée trouvée pour ce Player ID.")
 
-    # 2. Ranking Chart (Dark Mode optimized)
-    with col_right:
-        st.subheader("🏆 Top Consumers")
-        fig_rank = px.bar(
-            df_ranking.head(15), 
-            x='total_mb', 
-            y='location_name', 
-            orientation='h',
-            color='total_mb', 
-            color_continuous_scale='Viridis', # Dégradé néon
-            labels={'total_mb': 'MB', 'location_name': ''},
-            height=350,
-            template="plotly_dark"
-        )
-        # Force transparent background & reverse y-axis for top 1 at top
-        fig_rank.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=10, r=10, t=30, b=10),
-            yaxis={'categoryorder':'total ascending'}
-        )
-        st.plotly_chart(fig_rank, use_container_width=True)
+st.divider() 
 
-else:
-    st.warning("No data available. Check database connection.")
+# --- Section Globale (Ajoutée) ---
+st.subheader("🌍 Vue Globale : Consommation Totale par Location")
+st.markdown("Ce graphique montre le volume total de données consommées par **tous** les players 'bsp.exe', groupés par lieu.")
 
-# --- 5. Sidebar Search ---
-with st.sidebar:
-    st.header("🔎 Deep Dive")
-    player_input = st.text_input("Search Player Tag", "")
+with st.spinner('Chargement des statistiques globales...'):
+    df_global = get_global_stats()
+
+if not df_global.empty:
+    # Conversion en MB (ou GB si c'est très grand, ici on garde MB pour cohérence)
+    df_global['total_mb'] = (df_global['total_bytes'] / (1024 * 1024)).round(2)
+
+    # Graphique à Barres (Comparaison des lieux)
+    fig_global = px.bar(
+        df_global, 
+        x='location_name', 
+        y='total_mb',
+        color='total_mb',
+        title="Classement des Locations par Consommation de Données",
+        labels={'total_mb': 'Total Consommé (MB)', 'location_name': 'Lieu'},
+        color_continuous_scale='Viridis'
+    )
+    fig_global.update_layout(xaxis_tickangle=-45) # Incliner les labels si les noms sont longs
+    st.plotly_chart(fig_global, use_container_width=True)
     
-    if player_input:
-        df_p = get_player_data(player_input)
-        if not df_p.empty:
-            df_p['total_mb'] = (df_p['total_bytes'] / (1024 * 1024)).round(2)
-            st.success(f"Tag: {player_input}")
-            st.metric("Total", f"{df_p['total_mb'].sum():.2f} MB")
-            
-            fig_p = px.area(
-                df_p, x='date_log', y='total_mb', 
-                template="plotly_dark",
-                title="Player Usage"
-            )
-            fig_p.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                margin=dict(l=0,r=0,t=30,b=0), 
-                height=250
-            )
-            st.plotly_chart(fig_p, use_container_width=True)
-        else:
-            st.error("Tag not found.")
+    # Optionnel : Afficher le tableau de données brut dans un "expander"
+    with st.expander("Voir le tableau des données par location"):
+        st.dataframe(df_global[['location_name', 'total_mb']])
+else:
+    st.info("Pas de données globales disponibles pour le moment.")
