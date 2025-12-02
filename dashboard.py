@@ -94,8 +94,8 @@ def get_global_stats_by_location():
         conn.close()
         return pd.DataFrame()
 
-# 3. NEW Function: Global Timeline (Total consumption per day)
-def get_global_timeline():
+# 3. Function: Global Timeline by Location (Multi-line Chart)
+def get_global_timeline_by_location():
     conn = init_connection()
     if conn is None:
         return pd.DataFrame()
@@ -103,13 +103,18 @@ def get_global_timeline():
     query = """
     SELECT 
         ns.date_log,
+        l.name as location_name,
         SUM(ns.total_sent + ns.total_received) as total_bytes
     FROM 
         glpi_network_stats ns
+    JOIN 
+        glpi_computers c ON ns.computers_id = c.id
+    JOIN 
+        glpi_locations l ON c.locations_id = l.id
     WHERE 
         ns.app_name LIKE '%bsp.exe%'
     GROUP BY 
-        ns.date_log
+        ns.date_log, l.name
     ORDER BY 
         ns.date_log ASC;
     """
@@ -161,7 +166,7 @@ st.subheader("🌍 Global Network Overview")
 
 # Load global data
 with st.spinner('Loading global statistics...'):
-    df_timeline = get_global_timeline()
+    df_timeline = get_global_timeline_by_location()
     df_location = get_global_stats_by_location()
 
 # Convert bytes to MB
@@ -176,17 +181,22 @@ if not df_timeline.empty:
     col_metric1.metric("Total Consumption (All time)", f"{df_timeline['total_mb'].sum():.2f} MB")
     col_metric2.metric("Peak Daily Consumption", f"{df_timeline['total_mb'].max():.2f} MB")
 
-# Graph 1: Global Timeline
+# Graph 1: Global Timeline by Location
 if not df_timeline.empty:
-    st.markdown("### 📈 Total Daily Consumption (All Locations)")
-    fig_timeline = px.area(
+    st.markdown("### 📈 Evolution of Data Usage by Location")
+    fig_timeline = px.line(
         df_timeline,
         x='date_log',
         y='total_mb',
-        title="Evolution of Global Data Usage (bsp.exe)",
-        labels={'total_mb': 'Total Consumption (MB)', 'date_log': 'Date'},
+        color='location_name', # Splits lines by location
+        title="Daily Consumption per Location (bsp.exe)",
+        labels={'total_mb': 'Consumption (MB)', 'date_log': 'Date', 'location_name': 'Location'},
         markers=True
     )
+    # Interactive tooltips
+    fig_timeline.update_traces(mode="lines+markers")
+    fig_timeline.update_layout(hovermode="x unified")
+    
     st.plotly_chart(fig_timeline, use_container_width=True)
 
 # Graph 2: Location Ranking
